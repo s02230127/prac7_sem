@@ -7,6 +7,8 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 
 add_executable(mafia
     src/main.cpp
+    src/Player.cpp
+    src/Roles.cpp
 )
 target_include_directories(mafia PRIVATE include)
 
