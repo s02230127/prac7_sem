@@ -1,5 +1,7 @@
 #include "mafia/Moderator.hpp"
 
+#include <algorithm>
+#include <ranges>
 #include <unordered_map>
 #include <unordered_set>
 #include <utility>
@@ -48,26 +50,31 @@ VoteResult Moderator::resolveVotes(GameState& state,
     std::unordered_set<int> counted_voters;
     std::unordered_map<int, int> vote_counts;
 
-    for (const Vote& vote : votes) {
+    std::ranges::for_each(votes, [&](const Vote& vote) {
         if (vote.voter_id == vote.target_id ||
             !is_alive(state, vote.voter_id) ||
             !is_alive(state, vote.target_id) ||
             !counted_voters.insert(vote.voter_id).second) {
-            continue;
+            return;
         }
         ++vote_counts[vote.target_id];
-    }
+    });
+
+    std::vector<std::pair<int, int>> ranked_votes(vote_counts.begin(),
+                                                   vote_counts.end());
+    std::ranges::sort(ranked_votes, [](const auto& left, const auto& right) {
+        if (left.second != right.second) {
+            return left.second > right.second;
+        }
+        return left.first < right.first;
+    });
 
     VoteResult result;
-    int highest_count = 0;
-    for (const auto& [target_id, count] : vote_counts) {
-        if (count > highest_count) {
-            highest_count = count;
-            result.eliminated_id = target_id;
-            result.tie = false;
-        } else if (count == highest_count) {
-            result.eliminated_id = -1;
-            result.tie = true;
+    if (!ranked_votes.empty()) {
+        result.tie = ranked_votes.size() > 1 &&
+                     ranked_votes[0].second == ranked_votes[1].second;
+        if (!result.tie) {
+            result.eliminated_id = ranked_votes.front().first;
         }
     }
 

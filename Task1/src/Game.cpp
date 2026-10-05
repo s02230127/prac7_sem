@@ -64,33 +64,24 @@ const char* winner_name(Winner winner) {
 }
 
 Winner winner_for(const GameState& state) {
-    int mafia_count = 0;
-    int maniac_count = 0;
-    int town_count = 0;
+    auto living_players = state.players |
+        std::views::filter([](const PlayerState& entry) {
+            return entry.alive && entry.player.get() != nullptr;
+        });
 
-    for (const PlayerState& entry : state.players) {
-        if (!entry.alive || entry.player.get() == nullptr) {
-            continue;
-        }
-        switch (entry.player->role()) {
-            case Role::Mafia:
-            case Role::Ninja:
-            case Role::Bull:
-                ++mafia_count;
-                break;
-
-            case Role::Maniac:
-                ++maniac_count;
-                break;
-
-            case Role::Civilian:
-            case Role::Commissioner:
-            case Role::Doctor:
-            case Role::Elder:
-                ++town_count;
-                break;
-        }
-    }
+    const auto mafia_count = std::ranges::count_if(
+        living_players, [](const PlayerState& entry) {
+            return is_mafia_role(entry.player->role());
+        });
+    const auto maniac_count = std::ranges::count_if(
+        living_players, [](const PlayerState& entry) {
+            return entry.player->role() == Role::Maniac;
+        });
+    const auto town_count = std::ranges::count_if(
+        living_players, [](const PlayerState& entry) {
+            return !is_mafia_role(entry.player->role()) &&
+                   entry.player->role() != Role::Maniac;
+        });
 
     if (mafia_count == 0 && maniac_count == 0) {
         return town_count == 0 ? Winner::Draw : Winner::Town;
@@ -349,10 +340,9 @@ Game::Game(GameOptions options)
         }
 
         if (!replaced) {
-            throw std::runtime_error(
-                "Not enough slots for configured extra role: " +
-                std::string(role_name(extra_role))
-            );
+            std::cerr << "Предупреждение: для роли " << role_name(extra_role)
+                      << " не хватило мест при N=" << options_.player_count
+                      << "; роль пропущена.\n";
         }
     }
 
