@@ -1,6 +1,7 @@
 #include "mafia/Game.hpp"
 #include "mafia/Roles.hpp"
 #include "mafia/Concepts.hpp"
+#include "mafia/Config.hpp"
 
 #include <algorithm>
 #include <iostream>
@@ -20,6 +21,7 @@ struct DayDecision {
     int actor_id = -1;
     std::string message;
     int target_id = -1;
+
 };
 
 class ThreadGroup {
@@ -72,6 +74,8 @@ Winner winner_for(const GameState& state) {
         }
         switch (entry.player->role()) {
             case Role::Mafia:
+            case Role::Ninja:
+            case Role::Bull:
                 ++mafia_count;
                 break;
 
@@ -82,6 +86,7 @@ Winner winner_for(const GameState& state) {
             case Role::Civilian:
             case Role::Commissioner:
             case Role::Doctor:
+            case Role::Elder:
                 ++town_count;
                 break;
         }
@@ -115,6 +120,14 @@ const char* role_name(Role role) {
 
         case Role::Maniac: 
             return "Маньяк";
+        case Role::Ninja:
+            return "Ниндзя";
+
+        case Role::Bull:
+            return "Бык";
+
+        case Role::Elder:
+            return "Старейшина";
     }
     return "Неизвестно";
 }
@@ -156,6 +169,17 @@ const char* action_name(ActionType type) {
     return "неизвестное действие";
 }
 
+bool replace_role(std::vector<Role>& roles, Role old_role, Role new_role) {
+    auto it = std::find(roles.begin(), roles.end(), old_role);
+
+    if (it == roles.end()) {
+        return false;
+    }
+
+    *it = new_role;
+    return true;
+}
+
 SharedPtr<Player> make_player(Role role, int id) {
     switch (role) {
         case Role::Civilian:
@@ -172,6 +196,15 @@ SharedPtr<Player> make_player(Role role, int id) {
 
         case Role::Maniac:
             return make_role<Maniac>(id);
+        
+        case Role::Ninja:
+            return make_role<Ninja>(id);
+
+        case Role::Bull:
+            return make_role<Bull>(id);
+
+        case Role::Elder:
+            return make_role<Elder>(id);
     }
 
     throw std::runtime_error("Unknown role");
@@ -227,8 +260,11 @@ Action human_night_action(const Player& player, const GameView& view,
 
     switch (player.role()) {
     case Role::Civilian:
+    case Role::Elder:
         return {};
     case Role::Mafia:
+    case Role::Ninja:
+    case Role::Bull:
         target = ask_target(
             eligible_targets(view, actor_id, false, -1, &view.mafia_allies),
             "Мафия: кого убить ночью?");
@@ -279,8 +315,45 @@ Game::Game(GameOptions options)
     roles.push_back(Role::Commissioner);
     roles.push_back(Role::Doctor);
     roles.push_back(Role::Maniac);
+
     while (static_cast<int>(roles.size()) < options_.player_count) {
         roles.push_back(Role::Civilian);
+    }
+
+    const std::vector<Role> extra_roles =
+    load_extra_roles(options_.config_file);
+    
+    for (Role extra_role : extra_roles) {
+        bool replaced = false;
+
+        switch (extra_role) {
+            case Role::Ninja:
+            case Role::Bull:
+                replaced = replace_role(
+                    roles,
+                    Role::Mafia,
+                    extra_role
+                );
+                break;
+
+            case Role::Elder:
+                replaced = replace_role(
+                    roles,
+                    Role::Civilian,
+                    Role::Elder
+                );
+                break;
+
+            default:
+                break;
+        }
+
+        if (!replaced) {
+            throw std::runtime_error(
+                "Not enough slots for configured extra role: " +
+                std::string(role_name(extra_role))
+            );
+        }
     }
 
     std::mt19937 generator(std::random_device{}());
@@ -303,8 +376,8 @@ GameView Game::make_view_for(const Player& player) const {
 
     for (const PlayerState& entry : state_->players) {
         view.players.push_back({entry.player->id(), entry.alive});
-        if (player.role() == Role::Mafia && entry.alive &&
-            entry.player->role() == Role::Mafia) {
+        if (is_mafia_role(player.role()) && entry.alive &&
+            is_mafia_role(entry.player->role())) {
             view.mafia_allies.push_back(entry.player->id());
         }
     }
@@ -389,13 +462,29 @@ void Game::day_phase() {
 
     const VoteResult result = moderator_.resolveVotes(*state_, votes);
 
-    if (result.tie) {
+    if (result.protected_id != -1) {
+        if (options_.open_announcements) {
+            std::cout << "Игрок " << result.protected_id
+                    << " — Старейшина и не может быть исключён голосованием.\n";
+        } else {
+            std::cout << "Игрок " << result.protected_id
+                    << " не выбыл по итогам голосования.\n";
+        }
+
+        logger_.log_round(
+            state_->round,
+            "Игрок " + std::to_string(result.protected_id) +
+            " оказался Старейшиной и избежал исключения"
+        );
+
+    } else if (result.tie) {
         std::cout << "Голоса разделились поровну. Никто не выбыл.\n";
 
         logger_.log_round(
             state_->round,
             "Vote result: tie. Nobody eliminated."
         );
+
 
     } else if (result.eliminated_id == -1) {
         std::cout << "Днём никто не выбыл.\n";
@@ -413,7 +502,7 @@ void Game::day_phase() {
 
                 if (options_.open_announcements) {
                     announcement = role_name(entry.player->role());
-                } else if (entry.player->role() == Role::Mafia) {
+                } else if (is_mafia_role(entry.player->role())) {
                     announcement = "мафия";
                 } else {
                     announcement = "не мафия";
@@ -481,7 +570,7 @@ void Game::night_phase() {
             for (PlayerAction& action : actions) {
                 for (const PlayerState& entry : state_->players) {
                     if (entry.alive && entry.player->id() == action.actor_id &&
-                        entry.player->role() == Role::Mafia) {
+                        is_mafia_role(entry.player->role())) {
                         action.action = {ActionType::MafiaKill,
                                          human_mafia_target};
                     }
@@ -538,7 +627,7 @@ void Game::night_phase() {
                 if (options_.open_announcements) {
                     announcement = std::string(role_name(entry.player->role())) +
                                    ", выстрел " + death_cause_name(death.cause);
-                } else if (entry.player->role() == Role::Mafia) {
+                } else if (is_mafia_role(entry.player->role())) {
                     announcement = "мафия";
                 } else {
                     announcement = "не мафия";

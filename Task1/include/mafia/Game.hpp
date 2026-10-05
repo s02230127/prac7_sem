@@ -15,6 +15,8 @@ struct GameOptions {
     bool interactive = false;
     bool open_announcements = false;
     bool full_log = false;
+
+    std::string config_file = "config.yaml";
 };
 
 class Game {

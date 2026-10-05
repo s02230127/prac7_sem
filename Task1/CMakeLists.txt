@@ -12,6 +12,7 @@ add_executable(mafia
     src/Moderator.cpp
     src/Game.cpp
     src/Logger.cpp
+    src/Config.cpp
 )
 target_include_directories(mafia PRIVATE include)
 

@@ -63,7 +63,11 @@ std::string day_statement(const GameView& view, int self_id) {
 
 } // namespace
 
-Civilian::Civilian(int id) : Player(id, Role::Civilian) {}
+Civilian::Civilian(int id)
+    : Civilian(id, Role::Civilian) {}
+
+Civilian::Civilian(int id, Role role)
+    : Player(id, role) {}
 
 std::string Civilian::discuss(const GameView& view) {
     return day_statement(view, id());
@@ -77,7 +81,11 @@ Action Civilian::act(const GameView&) {
     return {ActionType::None, -1};
 }
 
-Mafia::Mafia(int id) : Player(id, Role::Mafia) {}
+Mafia::Mafia(int id)
+    : Mafia(id, Role::Mafia) {}
+
+Mafia::Mafia(int id, Role role)
+    : Player(id, role) {}
 
 std::string Mafia::discuss(const GameView& view) {
     return day_statement(view, id());
@@ -97,7 +105,8 @@ Action Mafia::act(const GameView& view) {
     return {ActionType::MafiaKill, target};
 }
 
-Doctor::Doctor(int id) : Player(id, Role::Doctor) {}
+Doctor::Doctor(int id)
+    : Player(id, Role::Doctor) {}
 
 std::string Doctor::discuss(const GameView& view) {
     return day_statement(view, id());
@@ -116,7 +125,8 @@ Action Doctor::act(const GameView& view) {
     return {ActionType::Heal, target};
 }
 
-Commissioner::Commissioner(int id) : Player(id, Role::Commissioner) {}
+Commissioner::Commissioner(int id)
+    : Player(id, Role::Commissioner) {}
 
 std::string Commissioner::discuss(const GameView& view) {
     return day_statement(view, id());
@@ -137,7 +147,8 @@ Action Commissioner::act(const GameView& view) {
     return {type, target};
 }
 
-Maniac::Maniac(int id) : Player(id, Role::Maniac) {}
+Maniac::Maniac(int id)
+    : Player(id, Role::Maniac) {}
 
 std::string Maniac::discuss(const GameView& view) {
     return day_statement(view, id());
@@ -151,5 +162,15 @@ Action Maniac::act(const GameView& view) {
     const int target = choose_target(view, id());
     return {target == -1 ? ActionType::None : ActionType::ManiacKill, target};
 }
+
+Ninja::Ninja(int id)
+    : Mafia(id, Role::Ninja) {}
+
+Bull::Bull(int id)
+    : Mafia(id, Role::Bull) {}
+
+
+Elder::Elder(int id)
+    : Civilian(id, Role::Elder) {}
 
 } // namespace mafia

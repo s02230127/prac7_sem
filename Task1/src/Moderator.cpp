@@ -25,8 +25,11 @@ bool is_alive(GameState& state, int id) {
 bool action_matches_role(Role role, ActionType type) {
     switch (role) {
     case Role::Civilian:
+    case Role::Elder:
         return type == ActionType::None;
     case Role::Mafia:
+    case Role::Ninja:
+    case Role::Bull:
         return type == ActionType::MafiaKill;
     case Role::Commissioner:
         return type == ActionType::Check || type == ActionType::Shoot;
@@ -69,7 +72,15 @@ VoteResult Moderator::resolveVotes(GameState& state,
     }
 
     if (result.eliminated_id != -1) {
-        find_player(state, result.eliminated_id)->alive = false;
+        PlayerState* eliminated =
+            find_player(state, result.eliminated_id);
+
+        if (eliminated->player->role() == Role::Elder) {
+            result.protected_id = result.eliminated_id;
+            result.eliminated_id = -1;
+        } else {
+            eliminated->alive = false;
+        }
     }
     return result;
 }
@@ -84,7 +95,7 @@ NightResult Moderator::resolveNight(
     int living_mafia = 0;
     for (const PlayerState& entry : state.players) {
         if (entry.alive && entry.player.get() != nullptr &&
-            entry.player->role() == Role::Mafia) {
+            is_mafia_role(entry.player->role())) {
             ++living_mafia;
         }
     }
@@ -110,7 +121,7 @@ NightResult Moderator::resolveNight(
         case ActionType::MafiaKill: {
             PlayerState* target = find_player(state, action.target_id);
 
-            if (target->player->role() != Role::Mafia) {
+            if (!is_mafia_role(target->player->role())) {
                 mafia_targets.push_back(action.target_id);
             }
 
@@ -120,7 +131,8 @@ NightResult Moderator::resolveNight(
             result.checks.push_back({
                 player_action.actor_id,
                 action.target_id,
-                find_player(state, action.target_id)->player->role() == Role::Mafia
+                find_player(state, action.target_id)->player->role() == Role::Mafia ||
+                find_player(state, action.target_id)->player->role() == Role::Bull
             });
             break;
         case ActionType::Shoot:
@@ -155,10 +167,21 @@ NightResult Moderator::resolveNight(
 
     std::unordered_set<int> killed_players;
     for (const auto& [target_id, cause] : attacks) {
-        if (target_id == result.healed_id ||
-            !killed_players.insert(target_id).second) {
+        if (target_id == result.healed_id) {
             continue;
         }
+
+        PlayerState* target = find_player(state, target_id);
+
+        if (cause == DeathCause::Maniac &&
+            target->player->role() == Role::Bull) {
+            continue;
+        }
+
+        if (!killed_players.insert(target_id).second) {
+            continue;
+        }
+
         result.deaths.push_back({target_id, cause});
     }
 

@@ -11,7 +11,10 @@ enum class Role {
     Mafia,
     Commissioner,
     Doctor,
-    Maniac
+    Maniac,
+    Ninja,
+    Bull,
+    Elder
 };
 
 enum class ActionType {
@@ -22,6 +25,12 @@ enum class ActionType {
     Heal,
     ManiacKill
 };
+
+inline bool is_mafia_role(Role role) {
+    return role == Role::Mafia ||
+           role == Role::Ninja ||
+           role == Role::Bull;
+}
 
 struct Action {
     ActionType type = ActionType::None;

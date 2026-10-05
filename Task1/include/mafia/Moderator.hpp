@@ -19,6 +19,7 @@ struct PlayerAction {
 
 struct VoteResult {
     int eliminated_id = -1;
+    int protected_id = -1;
     bool tie = false;
 };
 

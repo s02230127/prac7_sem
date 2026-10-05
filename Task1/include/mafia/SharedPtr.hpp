@@ -40,8 +40,8 @@ private:
 template <typename T>
 SharedPtr<T>::SharedPtr(T* ptr)  {
     ptr_ = ptr;
-    
-    if (ptr) {
+
+    if (ptr != nullptr) {
         try {
             count_ = new std::atomic<std::size_t>(1);
         } catch (...) {
