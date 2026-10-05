@@ -1,10 +1,11 @@
 #include "mafia/Game.hpp"
-
 #include "mafia/Roles.hpp"
+#include "mafia/Concepts.hpp"
 
 #include <algorithm>
 #include <iostream>
 #include <random>
+#include <ranges>
 #include <sstream>
 #include <stdexcept>
 #include <string>
@@ -54,17 +55,19 @@ Winner winner_for(const GameState& state) {
             continue;
         }
         switch (entry.player->role()) {
-        case Role::Mafia:
-            ++mafia_count;
-            break;
-        case Role::Maniac:
-            ++maniac_count;
-            break;
-        case Role::Civilian:
-        case Role::Commissioner:
-        case Role::Doctor:
-            ++town_count;
-            break;
+            case Role::Mafia:
+                ++mafia_count;
+                break;
+
+            case Role::Maniac:
+                ++maniac_count;
+                break;
+
+            case Role::Civilian:
+            case Role::Commissioner:
+            case Role::Doctor:
+                ++town_count;
+                break;
         }
     }
 
@@ -82,45 +85,80 @@ Winner winner_for(const GameState& state) {
 
 const char* role_name(Role role) {
     switch (role) {
-    case Role::Civilian: return "Мирный житель";
-    case Role::Mafia: return "Мафия";
-    case Role::Commissioner: return "Комиссар";
-    case Role::Doctor: return "Доктор";
-    case Role::Maniac: return "Маньяк";
+        case Role::Civilian: 
+            return "Мирный житель";
+
+        case Role::Mafia: 
+            return "Мафия";
+
+        case Role::Commissioner: 
+            return "Комиссар";
+
+        case Role::Doctor: 
+            return "Доктор";
+
+        case Role::Maniac: 
+            return "Маньяк";
     }
     return "Неизвестно";
 }
 
 const char* death_cause_name(DeathCause cause) {
     switch (cause) {
-    case DeathCause::Mafia: return "мафии";
-    case DeathCause::Commissioner: return "комиссара";
-    case DeathCause::Maniac: return "маньяка";
+        case DeathCause::Mafia: 
+            return "мафии";
+
+        case DeathCause::Commissioner: 
+            return "комиссара";
+
+        case DeathCause::Maniac: 
+            return "маньяка";
     }
     return "неизвестного";
 }
 
 const char* action_name(ActionType type) {
     switch (type) {
-    case ActionType::None: return "нет действия";
-    case ActionType::MafiaKill: return "выстрел мафии";
-    case ActionType::Check: return "проверка";
-    case ActionType::Shoot: return "выстрел комиссара";
-    case ActionType::Heal: return "лечение";
-    case ActionType::ManiacKill: return "выстрел маньяка";
+        case ActionType::None: 
+            return "нет действия";
+
+        case ActionType::MafiaKill: 
+            return "выстрел мафии";
+
+        case ActionType::Check:
+             return "проверка";
+
+        case ActionType::Shoot: 
+            return "выстрел комиссара";
+
+        case ActionType::Heal: 
+            return "лечение";
+
+        case ActionType::ManiacKill: 
+            return "выстрел маньяка";
     }
     return "неизвестное действие";
 }
 
 SharedPtr<Player> make_player(Role role, int id) {
     switch (role) {
-    case Role::Civilian: return SharedPtr<Player>(new Civilian(id));
-    case Role::Mafia: return SharedPtr<Player>(new Mafia(id));
-    case Role::Commissioner: return SharedPtr<Player>(new Commissioner(id));
-    case Role::Doctor: return SharedPtr<Player>(new Doctor(id));
-    case Role::Maniac: return SharedPtr<Player>(new Maniac(id));
+        case Role::Civilian:
+            return make_role<Civilian>(id);
+
+        case Role::Mafia:
+            return make_role<Mafia>(id);
+
+        case Role::Commissioner:
+            return make_role<Commissioner>(id);
+
+        case Role::Doctor:
+            return make_role<Doctor>(id);
+
+        case Role::Maniac:
+            return make_role<Maniac>(id);
     }
-    throw std::logic_error("Unknown player role");
+
+    throw std::runtime_error("Unknown role");
 }
 
 bool contains(const std::vector<int>& ids, int id) {
@@ -260,11 +298,14 @@ void Game::day_phase() {
     std::cout << "\nДень " << state_->round << ". Обсуждение и голосование.\n";
     std::vector<SharedPtr<Player>> participants;
     std::vector<GameView> views;
-    for (const PlayerState& entry : state_->players) {
-        if (entry.alive) {
-            participants.push_back(entry.player);
-            views.push_back(make_view_for(*entry.player));
-        }
+    for (const PlayerState& entry :
+        state_->players |
+        std::views::filter([](const PlayerState& entry) {
+            return entry.alive;
+        })) {
+
+        participants.push_back(entry.player);
+        views.push_back(make_view_for(*entry.player));
     }
 
     std::vector<DayDecision> decisions(participants.size());
@@ -328,11 +369,14 @@ void Game::night_phase() {
     std::cout << "\nНочь " << state_->round << ".\n";
     std::vector<SharedPtr<Player>> participants;
     std::vector<GameView> views;
-    for (const PlayerState& entry : state_->players) {
-        if (entry.alive) {
-            participants.push_back(entry.player);
-            views.push_back(make_view_for(*entry.player));
-        }
+    for (const PlayerState& entry :
+        state_->players |
+        std::views::filter([](const PlayerState& entry) {
+            return entry.alive;
+        })) {
+
+        participants.push_back(entry.player);
+        views.push_back(make_view_for(*entry.player));
     }
 
     std::vector<PlayerAction> actions(participants.size());
@@ -432,11 +476,23 @@ bool Game::is_game_over() const {
 void Game::print_winner() const {
     std::cout << "\nИгра окончена. Победитель: ";
     switch (winner_for(*state_)) {
-    case Winner::Town: std::cout << "мирные жители"; break;
-    case Winner::Mafia: std::cout << "мафия"; break;
-    case Winner::Maniac: std::cout << "маньяк"; break;
-    case Winner::Draw: std::cout << "ничья"; break;
-    case Winner::None: std::cout << "не определён"; break;
+        case Winner::Town: 
+            std::cout << "мирные жители"; break;
+
+        case Winner::Mafia: 
+            std::cout << "мафия"; 
+            break;
+
+        case Winner::Maniac: 
+            std::cout << "маньяк"; 
+            break;
+
+        case Winner::Draw: 
+            std::cout << "ничья"; 
+            break;
+        case Winner::None: 
+            std::cout << "не определён"; 
+            break;
     }
     std::cout << ".\n";
 }
