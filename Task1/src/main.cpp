@@ -1,7 +1,12 @@
-#include <iostream>
+#include "mafia/Game.hpp"
 
 int main() {
-    std::cout << "Mafia simulator scaffold: implementation pending.\n"
-                 "Run with --help after CLI implementation.\n";
+    mafia::GameOptions options;
+    options.player_count = 6;
+    options.full_log = true;
+
+    mafia::Game game(options);
+    game.run();
+
     return 0;
 }

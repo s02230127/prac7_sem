@@ -1,6 +1,10 @@
 #pragma once
 
+#include <string>
+#include <vector>
+
 #include "mafia/GameState.hpp"
+#include "mafia/Logger.hpp"
 #include "mafia/Moderator.hpp"
 
 namespace mafia {
@@ -21,6 +25,12 @@ public:
     void run();
 
 private:
+    struct PlayerStats {
+        int votes_cast = 0;
+        int votes_received = 0;
+        int night_actions = 0;
+    };
+
     GameView make_view_for(const Player& player) const;
 
     void day_phase();
@@ -32,6 +42,8 @@ private:
     GameOptions options_;
     SharedPtr<GameState> state_;
     Moderator moderator_;
+    Logger logger_;
+    std::vector<PlayerStats> stats_;
     int human_last_healed_id_ = -1;
 };
 

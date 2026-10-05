@@ -45,6 +45,22 @@ private:
 
 enum class Winner { None, Town, Mafia, Maniac, Draw };
 
+const char* winner_name(Winner winner) {
+    switch (winner) {
+        case Winner::Town:
+            return "мирные жители";
+        case Winner::Mafia:
+            return "мафия";
+        case Winner::Maniac:
+            return "маньяк";
+        case Winner::Draw:
+            return "ничья";
+        case Winner::None:
+            return "не определён";
+    }
+    return "не определён";
+}
+
 Winner winner_for(const GameState& state) {
     int mafia_count = 0;
     int maniac_count = 0;
@@ -254,6 +270,7 @@ Game::Game(GameOptions options)
     if (options_.player_count <= 4 || options_.mafia_divisor < 3) {
         throw std::invalid_argument("players must be > 4 and mafia divisor >= 3");
     }
+    stats_.resize(static_cast<std::size_t>(options_.player_count));
 
     const int mafia_count =
         std::max(1, options_.player_count / options_.mafia_divisor);
@@ -295,6 +312,7 @@ GameView Game::make_view_for(const Player& player) const {
 }
 
 void Game::day_phase() {
+    logger_.log_round(state_->round, "=== DAY ===");
     std::cout << "\nДень " << state_->round << ". Обсуждение и голосование.\n";
     std::vector<SharedPtr<Player>> participants;
     std::vector<GameView> views;
@@ -332,6 +350,7 @@ void Game::day_phase() {
             }
         });
     }
+    
     threads.join();
 
     std::vector<Vote> votes;
@@ -340,25 +359,78 @@ void Game::day_phase() {
         std::cout << "Игрок " << decision.actor_id << ": "
                   << decision.message << '\n';
         votes.push_back({decision.actor_id, decision.target_id});
+
+        logger_.log_round(
+            state_->round,
+            "Игрок " + std::to_string(decision.actor_id) +
+            ": " + decision.message
+        );
+
+        logger_.log_round(
+            state_->round,
+            "Игрок " + std::to_string(decision.actor_id) +
+            " проголосовал за " + std::to_string(decision.target_id)
+        );
+
+        if (decision.actor_id > 0 &&
+            static_cast<std::size_t>(decision.actor_id) <= stats_.size()) {
+            ++stats_[static_cast<std::size_t>(decision.actor_id - 1)].votes_cast;
+        }
+
+        if (decision.target_id > 0 &&
+            static_cast<std::size_t>(decision.target_id) <= stats_.size()) {
+            ++stats_[static_cast<std::size_t>(decision.target_id - 1)].votes_received;
+        }
+
         if (options_.full_log) {
             std::cout << "  Голос: " << decision.target_id << '\n';
         }
     }
 
     const VoteResult result = moderator_.resolveVotes(*state_, votes);
+
     if (result.tie) {
         std::cout << "Голоса разделились поровну. Никто не выбыл.\n";
+
+        logger_.log_round(
+            state_->round,
+            "Vote result: tie. Nobody eliminated."
+        );
+
     } else if (result.eliminated_id == -1) {
         std::cout << "Днём никто не выбыл.\n";
+
+        logger_.log_round(
+            state_->round,
+            "Nobody eliminated during the day."
+        );
+
     } else {
         for (const PlayerState& entry : state_->players) {
             if (entry.player->id() == result.eliminated_id) {
-                std::cout << "Голосованием выбыл игрок " << result.eliminated_id
-                          << " (" << (options_.open_announcements
-                                         ? role_name(entry.player->role())
-                                         : (entry.player->role() == Role::Mafia
-                                                ? "мафия" : "не мафия"))
-                          << ").\n";
+
+                std::string announcement;
+
+                if (options_.open_announcements) {
+                    announcement = role_name(entry.player->role());
+                } else if (entry.player->role() == Role::Mafia) {
+                    announcement = "мафия";
+                } else {
+                    announcement = "не мафия";
+                }
+
+                std::cout << "Голосованием выбыл игрок "
+                        << result.eliminated_id
+                        << " (" << announcement << ").\n";
+
+                logger_.log_round(
+                    state_->round,
+                    "Выбыл игрок " +
+                    std::to_string(result.eliminated_id) +
+                    " (роль: " + role_name(entry.player->role()) +
+                    ", причина: дневное голосование)"
+                );
+
                 break;
             }
         }
@@ -366,6 +438,7 @@ void Game::day_phase() {
 }
 
 void Game::night_phase() {
+    logger_.log_round(state_->round, "=== NIGHT ===");
     std::cout << "\nНочь " << state_->round << ".\n";
     std::vector<SharedPtr<Player>> participants;
     std::vector<GameView> views;
@@ -417,54 +490,90 @@ void Game::night_phase() {
         }
     }
 
-    if (options_.full_log) {
-        for (const PlayerAction& action : actions) {
-            std::cout << "Игрок " << action.actor_id << ": "
-                      << action_name(action.action.type);
-            if (action.action.target_id != -1) {
-                std::cout << " -> " << action.action.target_id;
-            }
-            std::cout << '\n';
+    for (const PlayerAction& action : actions) {
+        std::string text =
+            "Игрок " + std::to_string(action.actor_id) +
+            ": " + action_name(action.action.type);
+
+        if (action.action.target_id != -1) {
+            text += " -> " + std::to_string(action.action.target_id);
+        }
+
+        logger_.log_round(state_->round, text);
+
+        if (action.action.type != ActionType::None &&
+            action.actor_id > 0 &&
+            static_cast<std::size_t>(action.actor_id) <= stats_.size()) {
+            ++stats_[static_cast<std::size_t>(action.actor_id - 1)].night_actions;
+        }
+
+        if (options_.full_log) {
+            std::cout << text << '\n';
         }
     }
 
     const NightResult result = moderator_.resolveNight(*state_, actions);
-    if (options_.open_announcements && result.healed_id != -1) {
-        std::cout << "Доктор защищал игрока " << result.healed_id << ".\n";
+
+    if (result.healed_id != -1) {
+        logger_.log_round(
+            state_->round,
+            "Доктор защищал игрока " + std::to_string(result.healed_id)
+        );
+
+        if (options_.open_announcements) {
+            std::cout << "Доктор защищал игрока " << result.healed_id << ".\n";
+        }
     }
+
     if (result.deaths.empty()) {
         std::cout << "Ночью никто не выбыл.\n";
+        logger_.log_round(state_->round, "Ночью никто не выбыл.");
     }
+
     for (const Death& death : result.deaths) {
         for (const PlayerState& entry : state_->players) {
             if (entry.player->id() == death.player_id) {
-                std::cout << "Ночью выбыл игрок " << death.player_id;
+                std::string announcement;
+
                 if (options_.open_announcements) {
-                    std::cout << " (" << role_name(entry.player->role())
-                              << ", выстрел " << death_cause_name(death.cause)
-                              << ')';
+                    announcement = std::string(role_name(entry.player->role())) +
+                                   ", выстрел " + death_cause_name(death.cause);
+                } else if (entry.player->role() == Role::Mafia) {
+                    announcement = "мафия";
                 } else {
-                    std::cout << " (" << (entry.player->role() == Role::Mafia
-                                           ? "мафия" : "не мафия") << ')';
+                    announcement = "не мафия";
                 }
-                std::cout << ".\n";
+
+                std::cout << "Ночью выбыл игрок " << death.player_id
+                          << " (" << announcement << ").\n";
+
+                logger_.log_round(
+                    state_->round,
+                    "Ночью выбыл игрок " + std::to_string(death.player_id) +
+                    " (роль: " + role_name(entry.player->role()) +
+                    ", причина: выстрел " + death_cause_name(death.cause) + ")"
+                );
+
                 break;
             }
         }
     }
-    if (options_.interactive) {
-        for (const CheckResult& check : result.checks) {
-            if (check.commissioner_id == 1) {
-                std::cout << "Проверка игрока " << check.target_id << ": "
-                          << (check.is_mafia ? "мафия" : "не мафия") << ".\n";
-            }
+
+    for (const CheckResult& check : result.checks) {
+        const std::string check_text =
+            "Проверка комиссара " + std::to_string(check.commissioner_id) +
+            " -> " + std::to_string(check.target_id) + ": " +
+            (check.is_mafia ? "мафия" : "не мафия");
+
+        logger_.log_round(state_->round, check_text);
+
+        if (options_.interactive && check.commissioner_id == 1) {
+            std::cout << "Проверка игрока " << check.target_id << ": "
+                      << (check.is_mafia ? "мафия" : "не мафия") << ".\n";
         }
-    }
-    if (options_.full_log) {
-        for (const CheckResult& check : result.checks) {
-            std::cout << "Проверка комиссара " << check.commissioner_id
-                      << " -> " << check.target_id << ": "
-                      << (check.is_mafia ? "мафия" : "не мафия") << '\n';
+
+        if (options_.full_log) {
+            std::cout << check_text << '\n';
         }
     }
 }
@@ -474,27 +583,8 @@ bool Game::is_game_over() const {
 }
 
 void Game::print_winner() const {
-    std::cout << "\nИгра окончена. Победитель: ";
-    switch (winner_for(*state_)) {
-        case Winner::Town: 
-            std::cout << "мирные жители"; break;
-
-        case Winner::Mafia: 
-            std::cout << "мафия"; 
-            break;
-
-        case Winner::Maniac: 
-            std::cout << "маньяк"; 
-            break;
-
-        case Winner::Draw: 
-            std::cout << "ничья"; 
-            break;
-        case Winner::None: 
-            std::cout << "не определён"; 
-            break;
-    }
-    std::cout << ".\n";
+    std::cout << "\nИгра окончена. Победитель: "
+              << winner_name(winner_for(*state_)) << ".\n";
 }
 
 void Game::run() {
@@ -515,6 +605,31 @@ void Game::run() {
         ++state_->round;
     }
     print_winner();
+
+    std::ostringstream summary;
+    const Winner winner = winner_for(*state_);
+    const int completed_rounds =
+        state_->phase == Phase::Night ? state_->round - 1 : state_->round;
+
+    summary << "Итог игры\n";
+    summary << "Победитель: " << winner_name(winner) << '\n';
+    summary << "Раундов сыграно: " << completed_rounds << "\n\n";
+    summary << "Игроки:\n";
+
+    for (const PlayerState& entry : state_->players) {
+        const int id = entry.player->id();
+        const PlayerStats& stats =
+            stats_[static_cast<std::size_t>(id - 1)];
+
+        summary << "Игрок " << id
+                << ": " << role_name(entry.player->role())
+                << ", " << (entry.alive ? "жив" : "мёртв") << '\n'
+                << "  Голосов отдал: " << stats.votes_cast << '\n'
+                << "  Голосов получил: " << stats.votes_received << '\n'
+                << "  Ночных действий: " << stats.night_actions << '\n';
+    }
+
+    logger_.log_summary(summary.str());
 }
 
 } // namespace mafia
