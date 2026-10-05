@@ -17,7 +17,11 @@ struct VisiblePlayer {
 struct GameView {
     int round = 0;
     Phase phase = Phase::Day;
+
     std::vector<VisiblePlayer> players;
+
+    std::vector<int> mafia_allies;
 };
+
 
 } // namespace mafia

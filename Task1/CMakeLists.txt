@@ -9,6 +9,8 @@ add_executable(mafia
     src/main.cpp
     src/Player.cpp
     src/Roles.cpp
+    src/Moderator.cpp
+    src/Game.cpp
 )
 target_include_directories(mafia PRIVATE include)
 

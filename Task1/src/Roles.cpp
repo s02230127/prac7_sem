@@ -3,11 +3,11 @@
 
 #include <string>
 #include <vector>
+#include <cstddef>
 
 namespace mafia {
 namespace {
 
-// Simple deterministic choices until the game has vote history and clues.
 int choose_target(const GameView& view, int self_id, int excluded_id = -1,
                   bool allow_self = false) {
     std::vector<int> candidates;
@@ -22,6 +22,34 @@ int choose_target(const GameView& view, int self_id, int excluded_id = -1,
         return -1;
     }
     const auto index = static_cast<std::size_t>(view.round + self_id) % candidates.size();
+    return candidates[index];
+}
+
+bool is_mafia_ally(const GameView& view, int id) {
+    for (int ally_id : view.mafia_allies) {
+        if (ally_id == id) {
+            return true;
+        }
+    }
+    return false;
+}
+
+int choose_mafia_target(const GameView& view) {
+    std::vector<int> candidates;
+
+    for (const VisiblePlayer& player : view.players) {
+        if (player.alive && !is_mafia_ally(view, player.id)) {
+            candidates.push_back(player.id);
+        }
+    }
+
+    if (candidates.empty()) {
+        return -1;
+    }
+
+    const auto index =
+        static_cast<std::size_t>(view.round) % candidates.size();
+
     return candidates[index];
 }
 
@@ -60,8 +88,13 @@ int Mafia::vote(const GameView& view) {
 }
 
 Action Mafia::act(const GameView& view) {
-    const int target = choose_target(view, id());
-    return {target == -1 ? ActionType::None : ActionType::MafiaKill, target};
+    const int target = choose_mafia_target(view);
+
+    if (target == -1) {
+        return {ActionType::None, -1};
+    }
+
+    return {ActionType::MafiaKill, target};
 }
 
 Doctor::Doctor(int id) : Player(id, Role::Doctor) {}
