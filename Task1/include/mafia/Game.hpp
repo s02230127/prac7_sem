@@ -35,6 +35,7 @@ private:
     };
 
     GameView make_view_for(const Player& player) const;
+    void generate_round_shifts();
 
     void day_phase();
     void night_phase();
@@ -48,6 +49,7 @@ private:
     Logger logger_;
     std::vector<PlayerStats> stats_;
     std::vector<std::string> public_history_;
+    std::vector<int> round_shifts_;
     int human_last_healed_id_ = -1;
 };
 

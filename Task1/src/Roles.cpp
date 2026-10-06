@@ -20,8 +20,15 @@ int choose_target(const GameView& view, int self_id, int excluded_id = -1,
 
     if (candidates.empty()) {
         return -1;
-    }
-    const auto index = static_cast<std::size_t>(view.round + self_id) % candidates.size();
+    } 
+
+    const auto index =
+        static_cast<std::size_t>(
+            view.round +
+            self_id +
+            view.random_shift
+        ) % candidates.size();
+        
     return candidates[index];
 }
 
@@ -48,7 +55,9 @@ int choose_mafia_target(const GameView& view) {
     }
 
     const auto index =
-        static_cast<std::size_t>(view.round) % candidates.size();
+        static_cast<std::size_t>(
+            view.round + view.random_shift
+        ) % candidates.size();
 
     return candidates[index];
 }

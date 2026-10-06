@@ -18,6 +18,9 @@
 namespace mafia {
 namespace {
 
+constexpr int kMinPlayers = 5;
+constexpr int kMaxPlayers = 100;
+
 struct DayDecision {
     int actor_id = -1;
     std::string message;
@@ -301,8 +304,11 @@ Action human_night_action(const Player& player, const GameView& view,
 
 Game::Game(GameOptions options)
     : options_(options), state_(new GameState) {
-    if (options_.player_count <= 4 || options_.mafia_divisor < 3) {
-        throw std::invalid_argument("players must be > 4 and mafia divisor >= 3");
+    if (options_.player_count < kMinPlayers  || options_.mafia_divisor < 3 || options_.player_count > kMaxPlayers) {
+        throw std::invalid_argument(
+            "players must be between 5 and 100, "
+            "mafia divisor must be >= 3"
+        );
     }
     if (options_.ai_player_id != -1 &&
         (options_.ai_player_id < 1 || options_.ai_player_id > options_.player_count ||
@@ -310,6 +316,10 @@ Game::Game(GameOptions options)
         throw std::invalid_argument("invalid --ai-player ID");
     }
     stats_.resize(static_cast<std::size_t>(options_.player_count));
+
+    round_shifts_.resize(
+        static_cast<std::size_t>(options_.player_count)
+    );
 
     const int mafia_count =
         std::max(1, options_.player_count / options_.mafia_divisor);
@@ -370,10 +380,33 @@ Game::Game(GameOptions options)
 
 Game::Game(int player_count) : Game(GameOptions{player_count}) {}
 
+void Game::generate_round_shifts() {
+    static std::mt19937 generator(std::random_device{}());
+    std::uniform_int_distribution<int> distribution(0, 1000);
+
+    const int mafia_shift = distribution(generator);
+
+    for (const PlayerState& entry : state_->players) {
+        const int id = entry.player->id();
+
+        if (is_mafia_role(entry.player->role())) {
+            round_shifts_[static_cast<std::size_t>(id - 1)] =
+                mafia_shift;
+        } else {
+            round_shifts_[static_cast<std::size_t>(id - 1)] =
+                distribution(generator);
+        }
+    }
+}
+
 GameView Game::make_view_for(const Player& player) const {
     GameView view;
     view.round = state_->round;
     view.phase = state_->phase;
+    view.random_shift =
+        round_shifts_[
+            static_cast<std::size_t>(player.id() - 1)
+        ];
     view.history = public_history_;
     view.players.reserve(state_->players.size());
 
@@ -586,7 +619,6 @@ void Game::night_phase() {
     }
     threads.join();
 
-    // The other mafia members agree with the human member's private decision.
     if (options_.interactive) {
         int human_mafia_target = -1;
         for (const PlayerAction& action : actions) {
@@ -719,12 +751,17 @@ void Game::run() {
     }
 
     while (!is_game_over()) {
+        generate_round_shifts();
+
         state_->phase = Phase::Day;
         day_phase();
         if (is_game_over()) {
             break;
         }
+
         state_->phase = Phase::Night;
+
+        generate_round_shifts();
         night_phase();
         ++state_->round;
     }

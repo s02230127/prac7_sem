@@ -156,7 +156,6 @@ NightResult Moderator::resolveNight(
         }
     }
 
-    // The mafia gets one collective kill only when every living member agrees.
     if (living_mafia > 0 &&
         mafia_targets.size() == static_cast<std::size_t>(living_mafia)) {
         const int target_id = mafia_targets.front();
