@@ -1,5 +1,6 @@
 #pragma once
 
+#include <string>
 #include <vector>
 
 namespace mafia {
@@ -21,6 +22,7 @@ struct GameView {
     std::vector<VisiblePlayer> players;
 
     std::vector<int> mafia_allies;
+    std::vector<std::string> history;
 };
 
 

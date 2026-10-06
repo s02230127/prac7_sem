@@ -29,6 +29,12 @@ int main(int argc, char* argv[]) {
             else if (argument == "--full-log") {
                 options.full_log = true;
             }
+            else if (argument == "--ai-player") {
+                if (i + 1 >= argc) {
+                    throw std::invalid_argument("--ai-player requires an ID");
+                }
+                options.ai_player_id = std::stoi(argv[++i]);
+            }
             else if (argument == "--config") {
                 if (i + 1 >= argc) {
                     throw std::invalid_argument(
@@ -47,6 +53,7 @@ int main(int argc, char* argv[]) {
                     << "  --interactive            player 1 is controlled by user\n"
                     << "  --open-announcements     reveal full roles\n"
                     << "  --full-log               show detailed log\n"
+                    << "  --ai-player ID           use local Ollama for this player\n"
                     << "  --config FILE            YAML role config (default: config.yaml)\n"
                     << "  --help                    show this message\n";
 

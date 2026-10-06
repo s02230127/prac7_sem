@@ -2,6 +2,7 @@
 #include "mafia/Roles.hpp"
 #include "mafia/Concepts.hpp"
 #include "mafia/Config.hpp"
+#include "mafia/AiAgent.hpp"
 
 #include <algorithm>
 #include <iostream>
@@ -21,6 +22,8 @@ struct DayDecision {
     int actor_id = -1;
     std::string message;
     int target_id = -1;
+    std::string reasoning;
+    bool used_ai = false;
 
 };
 
@@ -89,6 +92,10 @@ Winner winner_for(const GameState& state) {
     if (mafia_count == 0 && maniac_count == 1 && town_count <= 1) {
         return Winner::Maniac;
     }
+    if (mafia_count > town_count + maniac_count) {
+        return Winner::Mafia;
+    }
+
     if (maniac_count == 0 && mafia_count >= town_count) {
         return Winner::Mafia;
     }
@@ -297,6 +304,11 @@ Game::Game(GameOptions options)
     if (options_.player_count <= 4 || options_.mafia_divisor < 3) {
         throw std::invalid_argument("players must be > 4 and mafia divisor >= 3");
     }
+    if (options_.ai_player_id != -1 &&
+        (options_.ai_player_id < 1 || options_.ai_player_id > options_.player_count ||
+         (options_.interactive && options_.ai_player_id == 1))) {
+        throw std::invalid_argument("invalid --ai-player ID");
+    }
     stats_.resize(static_cast<std::size_t>(options_.player_count));
 
     const int mafia_count =
@@ -362,6 +374,7 @@ GameView Game::make_view_for(const Player& player) const {
     GameView view;
     view.round = state_->round;
     view.phase = state_->phase;
+    view.history = public_history_;
     view.players.reserve(state_->players.size());
 
     for (const PlayerState& entry : state_->players) {
@@ -407,6 +420,18 @@ void Game::day_phase() {
                 decision.target_id = ask_target(
                     eligible_targets(view, player->id()),
                     "За кого вы голосуете?");
+            } else if (player->id() == options_.ai_player_id) {
+                const auto ai = AiAgent::decide(view, player->id(),
+                                                role_name(player->role()));
+                if (ai) {
+                    decision.message = ai->message;
+                    decision.target_id = ai->target_id;
+                    decision.reasoning = ai->reasoning;
+                    decision.used_ai = true;
+                } else {
+                    decision.message = player->discuss(view);
+                    decision.target_id = player->vote(view);
+                }
             } else {
                 decision.message = player->discuss(view);
                 decision.target_id = player->vote(view);
@@ -422,6 +447,10 @@ void Game::day_phase() {
         std::cout << "Игрок " << decision.actor_id << ": "
                   << decision.message << '\n';
         votes.push_back({decision.actor_id, decision.target_id});
+        public_history_.push_back(
+            "Раунд " + std::to_string(state_->round) + ": игрок " +
+            std::to_string(decision.actor_id) + " сказал: " + decision.message +
+            "; голосовал за " + std::to_string(decision.target_id));
 
         logger_.log_round(
             state_->round,
@@ -434,6 +463,11 @@ void Game::day_phase() {
             "Игрок " + std::to_string(decision.actor_id) +
             " проголосовал за " + std::to_string(decision.target_id)
         );
+        if (decision.actor_id == options_.ai_player_id) {
+            logger_.log_round(state_->round, decision.used_ai
+                ? "ИИ: причина голоса — " + decision.reasoning
+                : "ИИ недоступен или ответ некорректен; использована обычная логика");
+        }
 
         if (decision.actor_id > 0 &&
             static_cast<std::size_t>(decision.actor_id) <= stats_.size()) {
@@ -451,6 +485,12 @@ void Game::day_phase() {
     }
 
     const VoteResult result = moderator_.resolveVotes(*state_, votes);
+    if (result.eliminated_id != -1) {
+        public_history_.push_back(
+            "Раунд " + std::to_string(state_->round) +
+            ": голосованием выбыл игрок " +
+            std::to_string(result.eliminated_id));
+    }
 
     if (result.protected_id != -1) {
         if (options_.open_announcements) {
@@ -592,6 +632,11 @@ void Game::night_phase() {
     }
 
     const NightResult result = moderator_.resolveNight(*state_, actions);
+    for (const Death& death : result.deaths) {
+        public_history_.push_back(
+            "Раунд " + std::to_string(state_->round) +
+            ": ночью выбыл игрок " + std::to_string(death.player_id));
+    }
 
     if (result.healed_id != -1) {
         logger_.log_round(

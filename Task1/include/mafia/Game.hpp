@@ -15,6 +15,7 @@ struct GameOptions {
     bool interactive = false;
     bool open_announcements = false;
     bool full_log = false;
+    int ai_player_id = -1;
 
     std::string config_file = "config.yaml";
 };
@@ -46,6 +47,7 @@ private:
     Moderator moderator_;
     Logger logger_;
     std::vector<PlayerStats> stats_;
+    std::vector<std::string> public_history_;
     int human_last_healed_id_ = -1;
 };
 
